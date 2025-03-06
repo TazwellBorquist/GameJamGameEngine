@@ -1,0 +1,13 @@
+[package]
+name = "game_jam_game_engine"
+version = "1.0.0"
+authors = ["Tazwell <tazwell@pdx.edu>"]
+
+description = "Simple game engine for developing games in rust during game jams."
+
+[dependencies]
+gl = "0.14.0"
+
+[dependencies.sdl2]
+version = "0.37"
+features = ["image"]
