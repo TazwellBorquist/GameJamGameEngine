@@ -6,7 +6,7 @@ use std::error::Error;
 mod gamespace;
 
 mod assets;
-
+mod camera;
 mod entity_manager;
 
 //mod renderer;

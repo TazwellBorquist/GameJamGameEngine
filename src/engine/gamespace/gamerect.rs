@@ -5,7 +5,7 @@ use crate::engine::gamespace::{position::HasPosition, size::HasSize, GSnum, Posi
 ///
 /// The "center" of the GameRect is intended to be a relative value
 /// where 0 is the "left" of the size, and 1 is the "right". It's the
-/// same for the top and bottom.
+/// same for the bottom (0) and top (1).
 pub trait HasGameRect: HasSize + HasPosition {
     fn get_center(&self) -> Position;
     fn set_center(&self, center: &Position);
