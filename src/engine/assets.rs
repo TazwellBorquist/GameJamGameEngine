@@ -1,92 +1,132 @@
-extern crate sdl2;
+use sdl2::{
+    image::LoadTexture,
+    rect::Rect,
+    render::{Texture, TextureCreator},
+    video::WindowContext,
+};
+
+pub mod sprite;
+
+mod asset_finder;
+use self::asset_finder::SpriteSheetData;
+
+use std::cell::LazyCell;
+use std::collections::HashMap;
+use std::rc::Rc;
 
 use log;
 
-use sdl2::{
-    video::WindowContext,
+static ASSET_DIR: &str = "assets/";
+const MISSING_TEXTURE: LazyCell<String> = LazyCell::new(|| "miku".to_string());
 
-    image::LoadTexture, 
-    render::{
-        Texture,
-        TextureCreator,
+pub type EngineTex<'a> = Texture<'a>;
+pub type SpriteSheet = Vec<Option<Rect>>;
+
+impl From<SpriteSheetData> for Rect {
+    fn from(value: SpriteSheetData) -> Self {
+        Rect::new(value.x, value.y, value.width, value.height)
     }
-};
+}
 
-use std::{
-    collections::HashMap, 
-    path::PathBuf
-};
+struct Asset<'a> {
+    texture: Rc<EngineTex<'a>>,
+    sprite_sheets: Rc<SpriteSheet>,
+    sprite_names: HashMap<String, usize>,
+}
 
-const ASSETS_DIR: &str = "assets/";
+pub struct AssetCollection<'a> {
+    assets: HashMap<String, Asset<'a>>,
+}
 
-fn find_all_assets(dir: PathBuf, mut file_names: Vec<String>) -> Vec<String> {
-    // Read the contents of the passed directory
-    let assets = match dir.read_dir() {
-        Ok(dir_iter) => dir_iter,
-        Err(e) => {
-            log!("Error: Could not load assets from: {:?}\n\tError message: {}", dir, e);
-            return file_names;
-        }
-    };
+impl<'a> AssetCollection<'a> {
+    pub fn new(tc: &'a TextureCreator<WindowContext>) -> Self {
+        let alist = asset_finder::load_asset_list(ASSET_DIR.into());
 
-    // Iterate through entries of the directory
-    for entry in assets {
-        let file = match entry {
-            Ok(t) => t,
-            Err(e) => {
-                log!("Error while loading asset: {}", e);
-                continue;
-            }
-        };
+        let mut assets: HashMap<String, Asset<'a>> = HashMap::new();
 
-        // Check the type of the file
-        if let Ok(t) = file.file_type() {
-            // Recurse with this function if it's another directory
-            if t.is_dir() {
-                file_names = find_all_assets(file.path(), file_names);
-            
-            // Add the file if it's a "png" or "jpg"
-            } else if t.is_file() {
-                if let Some(ext) = file.path().extension() {
-                    if ext == "jpg" || ext == "png" {
-                        let file_name = file.path().to_string_lossy().to_string();
-                        file_names.push(file_name);
+        for a in alist {
+            let texture = match a.0.texture {
+                Some(tname) => match tc.load_texture(a.1.with_file_name(tname)) {
+                    Ok(x) => Rc::new(x),
+                    Err(e) => {
+                        log!("AssetCollection::new(): Failed to load texture for asset: {}\n\tError message: {}", a.0.name, e);
+                        continue;
                     }
-                }
-
-            }
-        }
-    }
-
-    file_names
-}
-
-pub struct Assets<'r> {
-    //texture_creator: TextureCreator<WindowCanvas>,
-    pub textures: HashMap<String, Texture<'r>>
-}
-
-impl<'r> Assets<'r> {
-    pub fn new(texture_creator: &'r TextureCreator<WindowContext>) -> Self {
-        let mut textures = HashMap::new();
-
-        let texture_names = find_all_assets(PathBuf::from(ASSETS_DIR), Vec::new());
-
-        for name in texture_names {
-            let texture = match texture_creator.load_texture(&name) {
-                Ok(t) => t,
-                Err(e) => {
-                    log!("Error loading texture: \"{}\" message: {}", name, e);
+                },
+                None => {
+                    log!(
+                        "AssetCollection::new(): No texture exists for asset {}",
+                        a.0.name
+                    );
                     continue;
                 }
             };
 
-            textures.insert(name, texture);
-        };
+            let mut sprite_sheets_raw: Vec<Option<Rect>> = vec![None];
+            let mut sprite_names: HashMap<String, usize> = HashMap::new();
+            for mut ss in a.0.sprite_sheet {
+                if ss.name.is_some() {
+                    sprite_names.insert(ss.name.take().unwrap(), sprite_sheets_raw.len() - 1);
+                }
+                sprite_sheets_raw.push(Some(ss.into()));
+            }
 
-        Self {
-            //texture_creator: texture_creator,
-            textures: textures
+            let sprite_sheets = Rc::new(sprite_sheets_raw);
+
+            assets.insert(
+                a.0.name,
+                Asset {
+                    texture,
+                    sprite_sheets,
+                    sprite_names,
+                },
+            );
+        }
+
+        log!(
+            "AssetCollection::new(): Done loading! {} Asset(s) successfully loaded!",
+            assets.len()
+        );
+
+        Self { assets: assets }
+    }
+
+    pub fn texture(&self, asset_name: &String) -> Rc<Texture<'a>> {
+        if self.assets.contains_key(asset_name) {
+            self.assets[asset_name].texture.clone()
+        } else {
+            self.assets[&*MISSING_TEXTURE].texture.clone()
+        }
+    }
+
+    pub fn sprite_sheet(&self, asset_name: &String) -> Rc<Vec<Option<Rect>>> {
+        if self.assets.contains_key(asset_name) {
+            self.assets[asset_name].sprite_sheets.clone()
+        } else {
+            self.assets[&*MISSING_TEXTURE].sprite_sheets.clone()
+        }
+    }
+
+    pub fn sprite_id_from_name(&self, asset_name: &String, sprite_name: &String) -> Option<usize> {
+        if self.assets.contains_key(asset_name) {
+            if self.assets[asset_name]
+                .sprite_names
+                .contains_key(sprite_name)
+            {
+                Some(self.assets[asset_name].sprite_names[sprite_name])
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
+    pub fn get_sprite_names(&self, asset_name: &String) -> Option<Vec<&String>> {
+        if self.assets.contains_key(asset_name) {
+            Some(self.assets[asset_name].sprite_names.keys().collect())
+        } else {
+            None
         }
     }
 }
