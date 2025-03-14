@@ -3,9 +3,8 @@ use std::sync::Mutex;
 
 mod logger;
 
-pub static LOGGER: LazyLock<Mutex<logger::AsyncLogger>> = LazyLock::new(
-    || Mutex::new(logger::AsyncLogger::new())
-);
+pub static LOGGER: LazyLock<Mutex<logger::AsyncLogger>> =
+    LazyLock::new(|| Mutex::new(logger::AsyncLogger::new()));
 
 #[macro_export]
 macro_rules! logger_init {

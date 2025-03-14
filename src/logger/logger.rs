@@ -1,16 +1,12 @@
-use std::fs::{ File, OpenOptions };
+use std::fs::{File, OpenOptions};
 use std::io::Write as _;
 use std::thread;
 
+use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
+use std::sync::mpsc::{channel, Sender};
 use std::sync::Arc;
-use std::sync::atomic::
-    { AtomicBool, Ordering::Relaxed };
-use std::sync::mpsc::
-    { Sender, channel };
 
-
-use std::time::
-    {Instant, Duration};
+use std::time::{Duration, Instant};
 
 /// Formats a duration into "[hh:mm:ss]".
 /// The hour section expands as needed
@@ -44,32 +40,33 @@ impl AsyncLogger {
 
         let (send, recv) = channel::<String>();
 
-        let joinhandle = thread::spawn( move || {
+        let joinhandle = thread::spawn(move || {
             let start_time = Instant::now();
             'logging: loop {
                 // match is_running and maybe a message
                 let _ = match (is_running_thread.load(Relaxed), recv.try_recv()) {
                     // message recieved
-                    (_,     Ok(raw_msg ) ) =>  {
+                    (_, Ok(raw_msg)) => {
                         let msg = format!(
                             "{} {}",
                             _log_time_stamp(Instant::now().duration_since(start_time)),
-                            raw_msg);
-                            match writeln!(&log_file, "{}", msg.as_str()) {
-                                Ok(_) => (),
-                                Err(x) => println!("{}", x),
-                            };
-                    },
+                            raw_msg
+                        );
+                        match writeln!(&log_file, "{}", msg.as_str()) {
+                            Ok(_) => (),
+                            Err(x) => println!("{}", x),
+                        };
+                    }
 
                     // log_thread no longer running
-                    (false,          Err(_) ) => break 'logging,
+                    (false, Err(_)) => break 'logging,
 
                     // nothing to do
-                    (true,                _ ) => continue,
+                    (true, _) => continue,
                 };
             }
-        } );
-        
+        });
+
         Self {
             is_log_running: is_running,
             log_thread: Some(joinhandle),
@@ -80,7 +77,7 @@ impl AsyncLogger {
     pub fn log(self: &Self, s: String) -> () {
         match self.send.clone().send(s) {
             Err(x) => println!("Failed to log: {x}"),
-            _ => ()
+            _ => (),
         };
     }
 
